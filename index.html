@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bill Wise Sales Report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{--bg:#f6f7f8;--surface:#fff;--ink:#1b2430;--muted:#5d6978;--line:#d5dae0;--accent:#0f6b63;--accent-ink:#fff;--hover:#eef4f3;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12171c;--surface:#1a2128;--ink:#e6eaee;--muted:#93a0ae;--line:#2d3640;--accent:#3fb5a8;--accent-ink:#0b1412;--hover:#1f2a2d}}
+:root[data-theme="dark"]{--bg:#12171c;--surface:#1a2128;--ink:#e6eaee;--muted:#93a0ae;--line:#2d3640;--accent:#3fb5a8;--accent-ink:#0b1412;--hover:#1f2a2d}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Segoe UI",Arial,sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 18px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 10px}
+button,input[type=search]{font:inherit}
+button{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 14px;border-radius:6px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+input[type=search]{flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.list{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.row{display:grid;grid-template-columns:26px 100px 1fr auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--hover)}
+.row .amt{font-variant-numeric:tabular-nums;color:var(--muted)}
+.count{color:var(--muted);margin-left:auto}
+.opt{display:flex;gap:6px;align-items:center;color:var(--muted)}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;margin:6px 0 18px}
+th,td{border:1px solid var(--line);padding:5px 8px;text-align:left}
+th{background:#dbeafe;color:#0b2a4a;font-weight:700}
+th.hdr{background:transparent;color:inherit}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.tot td{font-weight:700}
+.msg{color:var(--muted)}
+.err{color:#b3261e}
+.hidden{display:none}
+.hdr{padding:4px!important}
+.hdr input{width:100%;font:inherit;font-size:16px;font-weight:700;text-align:center;border:1px dashed var(--line);background:transparent;color:var(--ink);padding:6px}
+@page{size:A4 portrait;margin:12mm}
+@media print{
+  .hdr input{border:0;color:#000}
+  .hdr input::placeholder{color:transparent}
+  body{background:#fff;color:#000;font-size:12px}
+  .noprint{display:none!important}
+  main{padding:0;max-width:none}
+  section#out{border:0;padding:0;margin:0;background:#fff}
+  th,td{border-color:#000;color:#000}
+  th{background:#dbeafe!important;color:#000;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  th.hdr{background:transparent!important}
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="noprint">
+    <h1>Bill Wise Sales Report</h1>
+    <p class="sub">Open the sales export, tick the bills, and generate the print-ready sheet. The file stays in your browser.</p>
+
+    <section>
+      <h2>1. Sales export</h2>
+      <div class="bar">
+        <input type="file" id="file" accept=".xlsx,.xls">
+      </div>
+      <div id="status" class="msg">No file opened yet.</div>
+    </section>
+
+    <section id="pick" class="hidden">
+      <h2>2. Tick the bills</h2>
+      <div class="bar">
+        <input type="search" id="q" placeholder="Search bill number or party">
+        <button id="all">Tick shown</button>
+        <button id="none">Clear all</button>
+        <span class="count" id="count"></span>
+      </div>
+      <div class="list" id="list"></div>
+      <div class="bar" style="margin-top:12px">
+        <button class="primary" id="go" disabled>Generate report</button>
+        <label class="opt"><input type="checkbox" id="hidezero"> Hide products with zero sales</label>
+      </div>
+    </section>
+  </div>
+
+  <section id="out" class="hidden">
+    <div class="bar noprint">
+      <h2 style="margin:0">3. Report</h2>
+      <button class="primary" id="print" style="margin-left:auto">Download PDF</button>
+      <span id="pdfmsg" class="msg"></span>
+    </div>
+    <div class="wrap"><table id="t1"></table></div>
+    <div class="wrap"><table id="t2"></table></div>
+  </section>
+</main>
+
+<script>
+(function(){
+  var rows=[], bills=[], picked={}, saleDate='', heading='', report=null;
+  var $=function(id){return document.getElementById(id)};
+  var fmt=function(v){return Number(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})};
+  var num=function(v){var n=Number(v);return isNaN(n)?0:n};
+
+  function setStatus(t,err){var s=$('status');s.textContent=t;s.className=err?'err':'msg'}
+
+  $('file').addEventListener('change',function(e){
+    var f=e.target.files[0]; if(!f)return;
+    var r=new FileReader();
+    r.onload=function(ev){
+      try{ load(new Uint8Array(ev.target.result)); }
+      catch(x){ setStatus('Could not read this file: '+x.message,true); }
+    };
+    r.readAsArrayBuffer(f);
+  });
+
+  function load(data){
+    var wb=XLSX.read(data,{type:'array',cellDates:true});
+    var names=wb.SheetNames.slice().sort(function(a,b){return (b==='Bill Wise Sales')-(a==='Bill Wise Sales')});
+    var found=null;
+    for(var i=0;i<names.length&&!found;i++){
+      var aoa=XLSX.utils.sheet_to_json(wb.Sheets[names[i]],{header:1,defval:'',raw:true});
+      for(var h=0;h<Math.min(aoa.length,60);h++){
+        var hdr=aoa[h].map(function(c){return String(c).trim()});
+        if(hdr.indexOf('Bill Number')>-1&&hdr.indexOf('Product Description')>-1){found={aoa:aoa,h:h,hdr:hdr,name:names[i]};break}
+      }
+    }
+    if(!found){setStatus('Could not find the Bill Number and Product Description columns in this file.',true);return}
+    var ix=function(n){return found.hdr.indexOf(n)};
+    var c={bill:ix('Bill Number'),party:ix('Party'),prod:ix('Product Description'),mrp:ix('MRP'),units:ix('Units'),net:ix('Net Sales'),date:ix('Bill Date'),free:ix('Free Qty')};
+    var missing=['party','mrp','units','net'].filter(function(k){return c[k]<0});
+    if(missing.length){setStatus('Missing column(s): '+missing.join(', '),true);return}
+    rows=[];saleDate='';
+    for(var i2=found.h+1;i2<found.aoa.length;i2++){
+      var a=found.aoa[i2], b=String(a[c.bill]).trim();
+      if(!b)continue;
+      if(!saleDate&&c.date>-1&&a[c.date] instanceof Date) saleDate=a[c.date].toLocaleDateString('en-GB');
+      rows.push({bill:b,party:String(a[c.party]).trim(),prod:String(a[c.prod]).trim(),mrp:num(a[c.mrp]),units:num(a[c.units]),free:c.free>-1?num(a[c.free]):0,net:num(a[c.net])});
+    }
+    var map={};
+    rows.forEach(function(r){
+      var o=map[r.bill]||(map[r.bill]={bill:r.bill,party:r.party,net:0,lines:0});
+      o.net+=r.net;o.lines++;
+    });
+    bills=Object.keys(map).sort().map(function(k){return map[k]});
+    picked={};
+    setStatus(bills.length+' bills and '+rows.length+' lines found in sheet "'+found.name+'"'+(saleDate?' for '+saleDate:'')+'.');
+    $('pick').classList.remove('hidden');
+    $('out').classList.add('hidden');
+    renderList();
+  }
+
+  function shown(){
+    var q=$('q').value.trim().toLowerCase();
+    return bills.filter(function(b){return !q||b.bill.toLowerCase().indexOf(q)>-1||b.party.toLowerCase().indexOf(q)>-1});
+  }
+  function renderList(){
+    var l=$('list'); l.textContent='';
+    shown().forEach(function(b){
+      var d=document.createElement('label'); d.className='row';
+      var cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!picked[b.bill];
+      cb.addEventListener('change',function(){picked[b.bill]=cb.checked;updateCount()});
+      var n=document.createElement('span'); n.textContent=b.bill;
+      var p=document.createElement('span'); p.textContent=b.party;
+      var a=document.createElement('span'); a.className='amt'; a.textContent=fmt(b.net);
+      d.appendChild(cb);d.appendChild(n);d.appendChild(p);d.appendChild(a);
+      l.appendChild(d);
+    });
+    if(!l.firstChild){l.textContent='No bills match.';l.className='list msg'}else l.className='list';
+    updateCount();
+  }
+  function updateCount(){
+    var k=Object.keys(picked).filter(function(x){return picked[x]}).length;
+    $('count').textContent=k+' ticked';
+    $('go').disabled=!k;
+  }
+  $('q').addEventListener('input',renderList);
+  $('all').addEventListener('click',function(){shown().forEach(function(b){picked[b.bill]=true});renderList()});
+  $('none').addEventListener('click',function(){picked={};renderList()});
+
+  function cell(tr,t,cls,tag){var e=document.createElement(tag||'td');e.textContent=t;if(cls)e.className=cls;tr.appendChild(e)}
+
+  $('go').addEventListener('click',function(){
+    var sel=rows.filter(function(r){return picked[r.bill]});
+    var g={};
+    sel.forEach(function(r){
+      var k=r.prod+'|'+r.mrp;
+      var o=g[k]||(g[k]={prod:r.prod,mrp:r.mrp,units:0,free:0,net:0});
+      o.units+=r.units;o.free+=r.free;o.net+=r.net;
+    });
+    var items=Object.keys(g).map(function(k){return g[k]});
+    items.forEach(function(i){if(i.units===0)i.units=i.free});
+    if($('hidezero').checked) items=items.filter(function(i){return Math.abs(i.net)>0.005||i.units!==0});
+    items.sort(function(a,b){return a.prod.localeCompare(b.prod,'en',{sensitivity:'base'})||a.mrp-b.mrp});
+
+    var t1=$('t1'); t1.textContent='';
+    var hr=document.createElement('tr'),hc=document.createElement('th');
+    hc.colSpan=4;hc.className='hdr';
+    var hi=document.createElement('input');hi.type='text';hi.placeholder='Type a heading for the printout';hi.value=heading;
+    hi.addEventListener('input',function(){heading=hi.value});
+    hc.appendChild(hi);hr.appendChild(hc);t1.appendChild(hr);
+    var th=document.createElement('tr');
+    cell(th,'Product Description','','th');cell(th,'MRP','n','th');cell(th,'Sum of Units','n','th');cell(th,'Sum of Net Sales','n','th');
+    t1.appendChild(th);
+    var U=0,N=0;
+    items.forEach(function(i){
+      var tr=document.createElement('tr');
+      cell(tr,i.prod);cell(tr,String(i.mrp),'n');cell(tr,String(i.units),'n');cell(tr,fmt(i.net),'n');
+      t1.appendChild(tr);U+=i.units;N+=i.net;
+    });
+    var tt=document.createElement('tr');tt.className='tot';
+    cell(tt,'Grand Total');cell(tt,'');cell(tt,String(U),'n');cell(tt,fmt(N),'n');
+    t1.appendChild(tt);
+
+    var pb={};
+    sel.forEach(function(r){var o=pb[r.bill]||(pb[r.bill]={party:r.party,bill:r.bill,tot:0});o.tot+=r.net});
+    var list=Object.keys(pb).map(function(k){return pb[k]}).sort(function(a,b){return a.party.localeCompare(b.party,'en',{sensitivity:'base'})});
+    var t2=$('t2'); t2.textContent='';
+    var h2=document.createElement('tr');
+    cell(h2,'Party','','th');cell(h2,'Bill Number','','th');cell(h2,'Total','n','th');
+    t2.appendChild(h2);
+    var T=0;
+    list.forEach(function(p){
+      var tr=document.createElement('tr');
+      cell(tr,p.party);cell(tr,p.bill);cell(tr,fmt(p.tot),'n');
+      t2.appendChild(tr);T+=p.tot;
+    });
+    var t3=document.createElement('tr');t3.className='tot';
+    cell(t3,'Grand Total');cell(t3,'');cell(t3,fmt(T),'n');
+    t2.appendChild(t3);
+
+    report={items:items,U:U,N:N,list:list,T:T};
+    $('pdfmsg').textContent='';
+    $('out').classList.remove('hidden');
+    $('out').scrollIntoView({behavior:'smooth'});
+  });
+
+  $('print').addEventListener('click',async function(){
+    if(!report)return;
+    var msg=$('pdfmsg'); msg.className='msg'; msg.textContent='';
+    try{
+      var doc=new window.jspdf.jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+      var y=14;
+      if(heading.trim()){doc.setFont('helvetica','bold');doc.setFontSize(14);doc.text(heading.trim(),105,y,{align:'center'});y+=6}
+      var base={theme:'grid',styles:{fontSize:9,cellPadding:1.6,textColor:0,lineColor:0,lineWidth:0.1},
+        headStyles:{fillColor:[219,234,254],textColor:0,fontStyle:'bold'},
+        footStyles:{fillColor:[255,255,255],textColor:0,fontStyle:'bold'},
+        margin:{left:12,right:12},
+        didParseCell:function(d){if(d.column.index>0&&d.column.index>=base.numFrom&&(d.section==='head'||d.section==='foot'||d.section==='body'))d.cell.styles.halign='right'}};
+      base.numFrom=1;
+      doc.autoTable(Object.assign({},base,{startY:y,
+        head:[['Product Description','MRP','Sum of Units','Sum of Net Sales']],
+        body:report.items.map(function(i){return [i.prod,String(i.mrp),String(i.units),fmt(i.net)]}),
+        foot:[['Grand Total','',String(report.U),fmt(report.N)]]}));
+      base.numFrom=2;
+      doc.autoTable(Object.assign({},base,{startY:doc.lastAutoTable.finalY+8,
+        head:[['Party','Bill Number','Total']],
+        body:report.list.map(function(p){return [p.party,p.bill,fmt(p.tot)]}),
+        foot:[['Grand Total','',fmt(report.T)]]}));
+      doc.save('bill-report'+(saleDate?'-'+saleDate.replace(/\//g,'-'):'')+'.pdf');
+    }catch(e){
+      msg.className='err';msg.textContent='Could not create the PDF: '+((e&&e.message)||e);
+    }
+  });
+})();
+</script>
+</body>
+</html>
