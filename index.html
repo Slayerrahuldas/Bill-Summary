@@ -15,7 +15,7 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Segoe UI",Arial,sans-serif}
-main{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
 h1{font-size:22px;margin:0 0 4px}
 .sub{color:var(--muted);margin:0 0 18px}
 section{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
@@ -27,8 +27,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 input[type=search]{flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
-.list{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:6px}
-.row{display:grid;grid-template-columns:26px 100px 1fr auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer}
+.list{column-count:2;column-gap:0;column-rule:1px solid var(--line);border:1px solid var(--line);border-radius:6px}
+@media (max-width:640px){.list{column-count:1}}
+.row{break-inside:avoid;display:grid;grid-template-columns:26px 90px 1fr auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer}
 .row:last-child{border-bottom:0}
 .row:hover{background:var(--hover)}
 .row .amt{font-variant-numeric:tabular-nums;color:var(--muted)}
@@ -37,7 +38,7 @@ input[type=search]{flex:1;min-width:160px;padding:7px 10px;border:1px solid var(
 .wrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;margin:6px 0 18px}
 th,td{border:1px solid var(--line);padding:5px 8px;text-align:left}
-th{background:#dbeafe;color:#0b2a4a;font-weight:700}
+th{background:transparent;color:inherit;font-weight:700}
 th.hdr{background:transparent;color:inherit}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 tr.tot td{font-weight:700}
@@ -55,8 +56,9 @@ tr.tot td{font-weight:700}
   main{padding:0;max-width:none}
   section#out{border:0;padding:0;margin:0;background:#fff}
   th,td{border-color:#000;color:#000}
+  tr.tot td{background:#fff9c4!important;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   th{background:#dbeafe!important;color:#000;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  th.hdr{background:transparent!important}
+  th.hdr{background:#fff9c4!important}
 }
 </style>
 </head>
@@ -85,7 +87,8 @@ tr.tot td{font-weight:700}
       <div class="list" id="list"></div>
       <div class="bar" style="margin-top:12px">
         <button class="primary" id="go" disabled>Generate report</button>
-        <label class="opt"><input type="checkbox" id="hidezero"> Hide products with zero sales</label>
+        <label class="opt"><input type="checkbox" id="hideparty"> Hide party in bottom table</label>
+        <label class="opt"><input type="checkbox" id="onlybill"> Show only bill number in bottom table</label>
       </div>
     </section>
   </div>
@@ -148,9 +151,11 @@ tr.tot td{font-weight:700}
       var o=map[r.bill]||(map[r.bill]={bill:r.bill,party:r.party,net:0,lines:0});
       o.net+=r.net;o.lines++;
     });
-    bills=Object.keys(map).sort().map(function(k){return map[k]});
+    var all=Object.keys(map).sort().map(function(k){return map[k]});
+    bills=all.filter(function(b){return b.net>=0});
+    var hiddenN=all.length-bills.length;
     picked={};
-    setStatus(bills.length+' bills and '+rows.length+' lines found in sheet "'+found.name+'"'+(saleDate?' for '+saleDate:'')+'.');
+    setStatus(bills.length+' bills shown'+(hiddenN?' ('+hiddenN+' with negative value hidden)':'')+', '+rows.length+' lines read from sheet "'+found.name+'".');
     $('pick').classList.remove('hidden');
     $('out').classList.add('hidden');
     renderList();
@@ -186,6 +191,28 @@ tr.tot td{font-weight:700}
 
   function cell(tr,t,cls,tag){var e=document.createElement(tag||'td');e.textContent=t;if(cls)e.className=cls;tr.appendChild(e)}
 
+  function fmt0(v){return Math.round(v).toLocaleString('en-IN',{maximumFractionDigits:0})}
+  function bottomCols(){
+    var only=$('onlybill').checked, hp=$('hideparty').checked||only;
+    var list=report.list.slice().sort(hp?function(a,b){return a.bill.localeCompare(b.bill)}:function(a,b){return a.party.localeCompare(b.party,'en',{sensitivity:'base'})});
+    var head,body,foot=null,numFrom;
+    if(only){head=['Bill Number'];body=list.map(function(p){return [p.bill]});numFrom=99}
+    else if(hp){head=['Bill Number','Bill Value'];body=list.map(function(p){return [p.bill,fmt0(p.tot)]});foot=['Grand Total',fmt0(report.T)];numFrom=1}
+    else{head=['Party','Bill Number','Bill Value'];body=list.map(function(p){return [p.party,p.bill,fmt0(p.tot)]});foot=['Grand Total','',fmt0(report.T)];numFrom=2}
+    return {head:head,body:body,foot:foot,numFrom:numFrom};
+  }
+  function renderBottom(){
+    var t2=$('t2'); t2.textContent='';
+    var c=bottomCols();
+    var h=document.createElement('tr');
+    c.head.forEach(function(x,i){cell(h,x,i>=c.numFrom?'n':'','th')});
+    t2.appendChild(h);
+    c.body.forEach(function(r){var tr=document.createElement('tr');r.forEach(function(x,i){cell(tr,x,i>=c.numFrom?'n':'')});t2.appendChild(tr)});
+    if(c.foot){var tf=document.createElement('tr');tf.className='tot';c.foot.forEach(function(x,i){cell(tf,x,i>=c.numFrom?'n':'')});t2.appendChild(tf)}
+  }
+  $('hideparty').addEventListener('change',function(){if(report)renderBottom()});
+  $('onlybill').addEventListener('change',function(){if(report)renderBottom()});
+
   $('go').addEventListener('click',function(){
     var sel=rows.filter(function(r){return picked[r.bill]});
     var g={};
@@ -196,7 +223,6 @@ tr.tot td{font-weight:700}
     });
     var items=Object.keys(g).map(function(k){return g[k]});
     items.forEach(function(i){if(i.units===0)i.units=i.free});
-    if($('hidezero').checked) items=items.filter(function(i){return Math.abs(i.net)>0.005||i.units!==0});
     items.sort(function(a,b){return a.prod.localeCompare(b.prod,'en',{sensitivity:'base'})||a.mrp-b.mrp});
 
     var t1=$('t1'); t1.textContent='';
@@ -221,48 +247,72 @@ tr.tot td{font-weight:700}
     var pb={};
     sel.forEach(function(r){var o=pb[r.bill]||(pb[r.bill]={party:r.party,bill:r.bill,tot:0});o.tot+=r.net});
     var list=Object.keys(pb).map(function(k){return pb[k]}).sort(function(a,b){return a.party.localeCompare(b.party,'en',{sensitivity:'base'})});
-    var t2=$('t2'); t2.textContent='';
-    var h2=document.createElement('tr');
-    cell(h2,'Party','','th');cell(h2,'Bill Number','','th');cell(h2,'Total','n','th');
-    t2.appendChild(h2);
-    var T=0;
-    list.forEach(function(p){
-      var tr=document.createElement('tr');
-      cell(tr,p.party);cell(tr,p.bill);cell(tr,fmt(p.tot),'n');
-      t2.appendChild(tr);T+=p.tot;
-    });
-    var t3=document.createElement('tr');t3.className='tot';
-    cell(t3,'Grand Total');cell(t3,'');cell(t3,fmt(T),'n');
-    t2.appendChild(t3);
-
+    var T=list.reduce(function(sum,p){return sum+p.tot},0);
     report={items:items,U:U,N:N,list:list,T:T};
+    renderBottom();
     $('pdfmsg').textContent='';
     $('out').classList.remove('hidden');
     $('out').scrollIntoView({behavior:'smooth'});
   });
 
+  function buildPdf(){
+    var SZ=[[9,1.1],[8.5,1.0],[8,0.9],[7.5,0.8],[7,0.7],[6.5,0.6],[6,0.5],[5.5,0.4],[5,0.4]];
+    function mk(){return new window.jspdf.jsPDF({orientation:'portrait',unit:'mm',format:'a4'})}
+    function base(s,numFrom,boldFrom){
+      return {theme:'grid',styles:{fontSize:s[0],cellPadding:s[1],textColor:0,lineColor:0,lineWidth:0.1},
+        headStyles:{fillColor:[219,234,254],textColor:0,fontStyle:'bold'},
+        footStyles:{fillColor:[255,249,196],textColor:0,fontStyle:'bold'},
+        margin:{left:8,right:8,top:8,bottom:8},
+        didParseCell:function(d){
+          var inTable=(d.section==='head'||d.section==='foot'||d.section==='body');
+          if(inTable&&d.column.index>0&&d.column.index>=numFrom)d.cell.styles.halign='right';
+          if(d.section==='body'&&s[0]<8&&d.column.index>=boldFrom)d.cell.styles.fontStyle='bold';
+        }};
+    }
+    function top(doc,s){
+      var y=8;
+      if(heading.trim()){
+        var ht=heading.trim(),fs=13;
+        doc.setFont('helvetica','bold');doc.setFontSize(fs);
+        while(doc.getTextWidth(ht)>188&&fs>7){fs-=1;doc.setFontSize(fs)}
+        doc.setFillColor(255,249,196);doc.setDrawColor(0);doc.setLineWidth(0.1);
+        doc.rect(8,y,194,9,'FD');
+        doc.setTextColor(0);
+        doc.text(ht,105,y+6,{align:'center'});
+        y+=9;
+      }
+      doc.autoTable(Object.assign(base(s,1,1),{startY:y,
+        head:[['Product Description','MRP','Sum of Units','Sum of Net Sales']],
+        body:report.items.map(function(i){return [i.prod,String(i.mrp),String(i.units),fmt(i.net)]}),
+        foot:[['Grand Total','',String(report.U),fmt(report.N)]]}));
+    }
+    function bottom(doc,s,y){
+      var c=bottomCols();
+      var o={startY:y,head:[c.head],body:c.body};
+      if(c.foot)o.foot=[c.foot];
+      doc.autoTable(Object.assign(base(s,c.numFrom,c.head.length===3?1:0),o));
+    }
+    function fitsTop(s){var d=mk();top(d,s);return d.getNumberOfPages()===1}
+    function fitsBottom(s){var d=mk();bottom(d,s,8);return d.getNumberOfPages()===1}
+    var i,d;
+    // one page: 9 pt down to 7 pt (numbers in bold below 8 pt)
+    for(i=0;i<5;i++){
+      d=mk();top(d,SZ[i]);bottom(d,SZ[i],d.lastAutoTable.finalY+5);
+      if(d.getNumberOfPages()===1)return d;
+    }
+    // otherwise exactly two pages: each table is sized to fit its own page
+    var a=SZ.length-1,b=SZ.length-1;
+    for(i=0;i<SZ.length;i++){if(fitsTop(SZ[i])){a=i;break}}
+    for(i=0;i<SZ.length;i++){if(fitsBottom(SZ[i])){b=i;break}}
+    d=mk();top(d,SZ[a]);d.addPage();bottom(d,SZ[b],8);
+    return d;
+  }
+
   $('print').addEventListener('click',async function(){
     if(!report)return;
     var msg=$('pdfmsg'); msg.className='msg'; msg.textContent='';
     try{
-      var doc=new window.jspdf.jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-      var y=14;
-      if(heading.trim()){doc.setFont('helvetica','bold');doc.setFontSize(14);doc.text(heading.trim(),105,y,{align:'center'});y+=6}
-      var base={theme:'grid',styles:{fontSize:9,cellPadding:1.6,textColor:0,lineColor:0,lineWidth:0.1},
-        headStyles:{fillColor:[219,234,254],textColor:0,fontStyle:'bold'},
-        footStyles:{fillColor:[255,255,255],textColor:0,fontStyle:'bold'},
-        margin:{left:12,right:12},
-        didParseCell:function(d){if(d.column.index>0&&d.column.index>=base.numFrom&&(d.section==='head'||d.section==='foot'||d.section==='body'))d.cell.styles.halign='right'}};
-      base.numFrom=1;
-      doc.autoTable(Object.assign({},base,{startY:y,
-        head:[['Product Description','MRP','Sum of Units','Sum of Net Sales']],
-        body:report.items.map(function(i){return [i.prod,String(i.mrp),String(i.units),fmt(i.net)]}),
-        foot:[['Grand Total','',String(report.U),fmt(report.N)]]}));
-      base.numFrom=2;
-      doc.autoTable(Object.assign({},base,{startY:doc.lastAutoTable.finalY+8,
-        head:[['Party','Bill Number','Total']],
-        body:report.list.map(function(p){return [p.party,p.bill,fmt(p.tot)]}),
-        foot:[['Grand Total','',fmt(report.T)]]}));
+      var doc=buildPdf();
       doc.save('bill-report'+(saleDate?'-'+saleDate.replace(/\//g,'-'):'')+'.pdf');
     }catch(e){
       msg.className='err';msg.textContent='Could not create the PDF: '+((e&&e.message)||e);
